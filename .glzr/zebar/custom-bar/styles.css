@@ -93,7 +93,6 @@ body,
   justify-self: end;
 }
 
-.logo,
 .binding-mode,
 .tiling-direction,
 .paused-button,
@@ -142,6 +141,10 @@ body,
 
 .binding-mode {
   margin-right: 4px;
+}
+
+.left .tiling-direction {
+  margin-right: 8px;
 }
 
 .cpu .high-usage {

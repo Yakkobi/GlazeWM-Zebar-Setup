@@ -122,7 +122,18 @@
         return (
           <div className="app">
             <div className="left">
-              <i className="logo nf nf-fa-windows"></i>
+              {output.glazewm && (
+                <button
+                  className={`tiling-direction nf ${
+                    output.glazewm.tilingDirection === 'horizontal'
+                      ? 'nf-md-swap_horizontal'
+                      : 'nf-md-swap_vertical'
+                  }`}
+                  onClick={() =>
+                    output.glazewm.runCommand('toggle-tiling-direction')
+                  }
+                ></button>
+              )}
               {output.glazewm && (
                 <div className="workspaces">
                   {output.glazewm.currentWorkspaces.map(workspace => (
@@ -170,17 +181,6 @@
                       {bindingMode.displayName ?? bindingMode.name}
                     </button>
                   ))}
-
-                  <button
-                    className={`tiling-direction nf ${
-                      output.glazewm.tilingDirection === 'horizontal'
-                        ? 'nf-md-swap_horizontal'
-                        : 'nf-md-swap_vertical'
-                    }`}
-                    onClick={() =>
-                      output.glazewm.runCommand('toggle-tiling-direction')
-                    }
-                  ></button>
                 </>
               )}
 
