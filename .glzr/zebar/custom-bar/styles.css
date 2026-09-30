@@ -147,6 +147,10 @@ body,
   margin-right: 8px;
 }
 
+.right > :last-child {
+  margin-right: 0;
+}
+
 .cpu .high-usage {
   color: #900029;
 }
