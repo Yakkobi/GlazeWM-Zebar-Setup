@@ -21,6 +21,7 @@
       import React, {
         useState,
         useEffect,
+        useRef,
       } from 'https://esm.sh/react@18?dev';
       import { createRoot } from 'https://esm.sh/react-dom@18/client?dev';
       import * as zebar from 'https://esm.sh/zebar@3.0';
@@ -46,12 +47,72 @@
       // Graph never scales below this, so idle noise stays flat (bytes/s).
       const SPEED_GRAPH_MIN_SCALE = 64 * 1024;
 
+      // Bar height from the preset in zpack.json, and the extra room the
+      // window grows by while a tooltip is showing (both in CSS pixels).
+      const BAR_HEIGHT = 40;
+      const TOOLTIP_AREA_HEIGHT = 110;
+
+      // Delay before hiding a tooltip, so moving between items doesn't
+      // shrink and regrow the window.
+      const TOOLTIP_HIDE_DELAY = 100;
+
+      // Resizes are queued so overlapping hovers apply in order.
+      let resizeQueue = Promise.resolve();
+
+      // Grow the widget window below the bar to make room for a tooltip,
+      // or shrink it back to just the bar.
+      function setTooltipAreaVisible(visible) {
+        resizeQueue = resizeQueue.then(async () => {
+          const tauriWindow = zebar.currentWidget().window.tauri;
+          const size = await tauriWindow.innerSize();
+          const height = Math.round(
+            (visible ? BAR_HEIGHT + TOOLTIP_AREA_HEIGHT : BAR_HEIGHT) *
+              window.devicePixelRatio,
+          );
+          if (size.height === height) return;
+          await tauriWindow.setSize(new size.constructor(size.width, height));
+        });
+        return resizeQueue;
+      }
+
       createRoot(document.getElementById('root')).render(<App />);
 
       function App() {
         const [output, setOutput] = useState(providers.outputMap);
         const [network, setNetwork] = useState(networkProvider.output);
         const [speedHistory, setSpeedHistory] = useState([]);
+        const [tooltip, setTooltip] = useState(null);
+        const [useNativeTooltips, setUseNativeTooltips] = useState(false);
+        const hideTooltipTimer = useRef(null);
+
+        // Fall back to the built-in Windows tooltips if the window can't
+        // be resized.
+        useEffect(() => {
+          setTooltipAreaVisible(tooltip !== null).catch(err => {
+            console.error(err);
+            resizeQueue = Promise.resolve();
+            setTooltip(null);
+            setUseNativeTooltips(true);
+          });
+        }, [tooltip !== null]);
+
+        // Hover handlers for an item, or a plain title attribute when
+        // using the Windows tooltips.
+        function tooltipProps(id, text) {
+          if (useNativeTooltips) return { title: text };
+          return {
+            onMouseEnter: e => {
+              clearTimeout(hideTooltipTimer.current);
+              setTooltip({ id, rect: e.currentTarget.getBoundingClientRect() });
+            },
+            onMouseLeave: () => {
+              hideTooltipTimer.current = setTimeout(
+                () => setTooltip(null),
+                TOOLTIP_HIDE_DELAY,
+              );
+            },
+          };
+        }
 
         useEffect(() => {
           providers.onOutput(() => setOutput(providers.outputMap));
@@ -68,6 +129,79 @@
         function formatSpeed(measure) {
           if (!measure) return '0 B/s';
           return `${measure.siValue.toFixed(1)} ${measure.siUnit}/s`;
+        }
+
+        // Format a byte count as gigabytes, e.g. "7.9 GB".
+        function formatGigabytes(bytes) {
+          return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+        }
+
+        // Format a duration in milliseconds as e.g. "1h 25m".
+        function formatDuration(ms) {
+          const minutes = Math.round(ms / 60000);
+          return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+        }
+
+        // Open a Windows Settings page, e.g. "ms-settings:network-wifi".
+        // Each program used here must be allowed in zpack.json.
+        function openSettings(page) {
+          zebar.shellSpawn('explorer', page).catch(console.error);
+        }
+
+        function openTaskManager() {
+          zebar.shellSpawn('taskmgr').catch(console.error);
+        }
+
+        function getNetworkTooltip(networkOutput) {
+          const iface = networkOutput.defaultInterface;
+          const gateway = networkOutput.defaultGateway;
+          const traffic = networkOutput.traffic;
+          if (!iface) return 'Not connected\nClick for network settings';
+
+          return [
+            gateway?.ssid
+              ? `Wi-Fi: ${gateway.ssid}`
+              : `Connection: ${iface.friendlyName ?? iface.type}`,
+            gateway?.signalStrength != null &&
+              `Signal: ${gateway.signalStrength}%`,
+            iface.ipv4Addresses[0] && `IP: ${iface.ipv4Addresses[0]}`,
+            `Download: ${formatSpeed(traffic?.received)}`,
+            `Upload: ${formatSpeed(traffic?.transmitted)}`,
+            'Click for network settings',
+          ]
+            .filter(Boolean)
+            .join('\n');
+        }
+
+        function getMemoryTooltip(memoryOutput) {
+          return [
+            `Memory: ${formatGigabytes(memoryOutput.usedMemory)} of ${formatGigabytes(memoryOutput.totalMemory)} used`,
+            `Swap: ${formatGigabytes(memoryOutput.usedSwap)} of ${formatGigabytes(memoryOutput.totalSwap)} used`,
+            'Click to open Task Manager',
+          ].join('\n');
+        }
+
+        function getCpuTooltip(cpuOutput) {
+          return [
+            `CPU: ${Math.round(cpuOutput.usage)}% used`,
+            `${cpuOutput.vendor}, ${cpuOutput.physicalCoreCount} cores / ${cpuOutput.logicalCoreCount} threads`,
+            `Speed: ${(cpuOutput.frequency / 1000).toFixed(2)} GHz`,
+            'Click to open Task Manager',
+          ].join('\n');
+        }
+
+        function getBatteryTooltip(batteryOutput) {
+          return [
+            `Battery: ${Math.round(batteryOutput.chargePercent)}%, ${batteryOutput.state}`,
+            batteryOutput.timeTillFull != null &&
+              `Full in ${formatDuration(batteryOutput.timeTillFull)}`,
+            batteryOutput.timeTillEmpty != null &&
+              `${formatDuration(batteryOutput.timeTillEmpty)} remaining`,
+            `Health: ${Math.round(batteryOutput.healthPercent)}%`,
+            'Click for power and battery settings',
+          ]
+            .filter(Boolean)
+            .join('\n');
         }
 
         // Small line graph of recent download speed, newest on the right.
@@ -93,9 +227,6 @@
               height={height}
               viewBox={`0 0 ${width} ${height}`}
             >
-              <title>
-                {`Download ${formatSpeed(traffic?.received)}\nUpload ${formatSpeed(traffic?.transmitted)}`}
-              </title>
               <polyline points={points} />
             </svg>
           );
@@ -146,6 +277,20 @@
           return <i className="nf nf-fa-battery_0"></i>;
         }
 
+        const tooltipTexts = {
+          tiling:
+            output.glazewm &&
+            `Tiling direction: ${output.glazewm.tilingDirection}\nClick to switch to ${
+              output.glazewm.tilingDirection === 'horizontal'
+                ? 'vertical'
+                : 'horizontal'
+            }`,
+          network: network && getNetworkTooltip(network),
+          memory: output.memory && getMemoryTooltip(output.memory),
+          cpu: output.cpu && getCpuTooltip(output.cpu),
+          battery: output.battery && getBatteryTooltip(output.battery),
+        };
+
         return (
           <div className="app">
             <div className="left">
@@ -156,6 +301,7 @@
                       ? 'nf-md-swap_horizontal'
                       : 'nf-md-swap_vertical'
                   }`}
+                  {...tooltipProps('tiling', tooltipTexts.tiling)}
                   onClick={() =>
                     output.glazewm.runCommand('toggle-tiling-direction')
                   }
@@ -212,7 +358,17 @@
               )}
 
               {network && (
-                <div className="network">
+                <div
+                  className="network clickable"
+                  {...tooltipProps('network', tooltipTexts.network)}
+                  onClick={() =>
+                    openSettings(
+                      network.defaultInterface?.type === 'ethernet'
+                        ? 'ms-settings:network-ethernet'
+                        : 'ms-settings:network-wifi',
+                    )
+                  }
+                >
                   {getNetworkIcon(network)}
                   {network.defaultGateway?.ssid}
                   <SpeedGraph
@@ -223,14 +379,22 @@
               )}
 
               {output.memory && (
-                <div className="memory">
+                <div
+                  className="memory clickable"
+                  {...tooltipProps('memory', tooltipTexts.memory)}
+                  onClick={openTaskManager}
+                >
                   <i className="nf nf-fae-chip"></i>
                   {Math.round(output.memory.usage)}%
                 </div>
               )}
 
               {output.cpu && (
-                <div className="cpu">
+                <div
+                  className="cpu clickable"
+                  {...tooltipProps('cpu', tooltipTexts.cpu)}
+                  onClick={openTaskManager}
+                >
                   <i className="nf nf-oct-cpu"></i>
 
                   {/* Change the text color if the CPU usage is high. */}
@@ -243,7 +407,11 @@
               )}
 
               {output.battery && (
-                <div className="battery">
+                <div
+                  className="battery clickable"
+                  {...tooltipProps('battery', tooltipTexts.battery)}
+                  onClick={() => openSettings('ms-settings:powersleep')}
+                >
                   {/* Show icon for whether battery is charging. */}
                   {output.battery.isCharging && (
                     <i className="nf nf-md-power_plug charging-icon"></i>
@@ -253,6 +421,23 @@
                 </div>
               )}
             </div>
+
+            {tooltip && tooltipTexts[tooltip.id] && (
+              <div
+                className="tooltip"
+                style={{
+                  top: `${BAR_HEIGHT + 4}px`,
+                  // Keep the tooltip on screen: line it up with the item's
+                  // left edge on the left half, its right edge otherwise.
+                  ...(tooltip.rect.left + tooltip.rect.width / 2 <
+                  window.innerWidth / 2
+                    ? { left: `${tooltip.rect.left}px` }
+                    : { right: `${window.innerWidth - tooltip.rect.right}px` }),
+                }}
+              >
+                {tooltipTexts[tooltip.id]}
+              </div>
+            )}
           </div>
         );
       }

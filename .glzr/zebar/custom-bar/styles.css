@@ -74,8 +74,28 @@ body,
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   align-items: center;
-  height: 100%;
+  /* Fixed rather than 100%, so the bar keeps its size while the window
+     grows to show a tooltip. Matches the preset height in zpack.json. */
+  height: 40px;
   padding: 4px 1.5vw;
+}
+
+.tooltip {
+  position: fixed;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgb(10 10 20 / 92%);
+  color: var(--text-color-dark);
+  line-height: 1.4;
+  white-space: pre;
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: light) {
+  .tooltip {
+    background: rgb(238 238 238 / 95%);
+    color: var(--text-color-light);
+  }
 }
 
 .left,
@@ -100,7 +120,15 @@ body,
 .memory,
 .cpu,
 .battery {
-  margin-right: 20px;
+  margin-right: 12px;
+}
+
+.clickable {
+  cursor: pointer;
+
+  & * {
+    cursor: pointer;
+  }
 }
 
 .workspaces {
@@ -150,11 +178,10 @@ body,
 .network {
   display: flex;
   align-items: center;
-  margin-right: 10px;
 }
 
 .speed-graph {
-  margin-left: 10px;
+  margin-left: 12px;
   overflow: visible;
 }
 
@@ -181,12 +208,12 @@ body,
 }
 
 .battery {
-  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .battery .charging-icon {
-  position: absolute;
   font-size: 7px;
-  left: -8px;
-  top: 3px;
+  margin-right: 2px;
+  align-self: flex-start;
 }

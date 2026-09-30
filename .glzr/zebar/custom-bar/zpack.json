@@ -21,7 +21,10 @@
         "rules": []
       },
       "privileges": {
-        "shellCommands": []
+        "shellCommands": [
+          { "program": "explorer", "argsRegex": "^ms-settings:[a-z-]+$" },
+          { "program": "taskmgr", "argsRegex": "^$" }
+        ]
       },
       "presets": [
         {
