@@ -147,6 +147,31 @@ body,
   margin-right: 8px;
 }
 
+.network {
+  display: flex;
+  align-items: center;
+  margin-right: 10px;
+}
+
+.speed-graph {
+  margin-left: 10px;
+  overflow: visible;
+}
+
+.speed-graph polyline {
+  fill: none;
+  stroke: var(--icon-color-dark);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+@media (prefers-color-scheme: light) {
+  .speed-graph polyline {
+    stroke: var(--icon-color-light);
+  }
+}
+
 .right > :last-child {
   margin-right: 0;
 }

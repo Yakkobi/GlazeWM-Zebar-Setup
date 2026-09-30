@@ -26,7 +26,6 @@
       import * as zebar from 'https://esm.sh/zebar@3.0';
 
       const providers = zebar.createProviderGroup({
-        network: { type: 'network' },
         glazewm: { type: 'glazewm' },
         cpu: { type: 'cpu' },
         date: { type: 'date', formatting: 'EEE d MMM t' },
@@ -34,14 +33,73 @@
         memory: { type: 'memory' },
       });
 
+      // Separate provider so every sample is one network reading, polled
+      // once a second for the speed graph.
+      const networkProvider = zebar.createProvider({
+        type: 'network',
+        refreshInterval: 1000,
+      });
+
+      // Number of samples shown in the speed graph (one per second).
+      const SPEED_HISTORY_LENGTH = 30;
+
+      // Graph never scales below this, so idle noise stays flat (bytes/s).
+      const SPEED_GRAPH_MIN_SCALE = 64 * 1024;
+
       createRoot(document.getElementById('root')).render(<App />);
 
       function App() {
         const [output, setOutput] = useState(providers.outputMap);
+        const [network, setNetwork] = useState(networkProvider.output);
+        const [speedHistory, setSpeedHistory] = useState([]);
 
         useEffect(() => {
           providers.onOutput(() => setOutput(providers.outputMap));
+          networkProvider.onOutput(networkOutput => {
+            setNetwork(networkOutput);
+            setSpeedHistory(history => [
+              ...history.slice(-(SPEED_HISTORY_LENGTH - 1)),
+              networkOutput.traffic?.received?.bytes ?? 0,
+            ]);
+          });
         }, []);
+
+        // Format a traffic measurement as e.g. "2.4 MB/s".
+        function formatSpeed(measure) {
+          if (!measure) return '0 B/s';
+          return `${measure.siValue.toFixed(1)} ${measure.siUnit}/s`;
+        }
+
+        // Small line graph of recent download speed, newest on the right.
+        function SpeedGraph({ history, traffic }) {
+          const width = 48;
+          const height = 14;
+          const max = Math.max(SPEED_GRAPH_MIN_SCALE, ...history);
+          const step = width / (SPEED_HISTORY_LENGTH - 1);
+          const offset = SPEED_HISTORY_LENGTH - history.length;
+          const points = history
+            .map(
+              (bytes, i) =>
+                `${((offset + i) * step).toFixed(1)},${(
+                  height - 1 - (bytes / max) * (height - 2)
+                ).toFixed(1)}`,
+            )
+            .join(' ');
+
+          return (
+            <svg
+              className="speed-graph"
+              width={width}
+              height={height}
+              viewBox={`0 0 ${width} ${height}`}
+            >
+              <title>
+                {`Download ${formatSpeed(traffic?.received)}\nUpload ${formatSpeed(traffic?.transmitted)}`}
+              </title>
+              <polyline points={points} />
+            </svg>
+          );
+        }
 
         // Get icon to show for current network status.
         function getNetworkIcon(networkOutput) {
@@ -153,10 +211,14 @@
                 </>
               )}
 
-              {output.network && (
+              {network && (
                 <div className="network">
-                  {getNetworkIcon(output.network)}
-                  {output.network.defaultGateway?.ssid}
+                  {getNetworkIcon(network)}
+                  {network.defaultGateway?.ssid}
+                  <SpeedGraph
+                    history={speedHistory}
+                    traffic={network.traffic}
+                  />
                 </div>
               )}
 
