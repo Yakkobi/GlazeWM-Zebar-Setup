@@ -184,7 +184,13 @@
         function getCpuTooltip(cpuOutput) {
           return [
             `CPU: ${Math.round(cpuOutput.usage)}% used`,
-            `${cpuOutput.vendor}, ${cpuOutput.physicalCoreCount} cores / ${cpuOutput.logicalCoreCount} threads`,
+            // Vendor can be empty, so only prefix it when present.
+            [
+              cpuOutput.vendor,
+              `${cpuOutput.physicalCoreCount} cores / ${cpuOutput.logicalCoreCount} threads`,
+            ]
+              .filter(Boolean)
+              .join(', '),
             `Speed: ${(cpuOutput.frequency / 1000).toFixed(2)} GHz`,
             'Click to open Task Manager',
           ].join('\n');
