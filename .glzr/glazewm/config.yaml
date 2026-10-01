@@ -248,8 +248,12 @@ keybindings:
   - commands: ["wm-exit"]
     bindings: ["alt+shift+e"]
 
-  # Re-evaluate configuration file.
-  - commands: ["wm-reload-config"]
+  # Restart the WM to apply config changes. wm-reload-config crashes
+  # GlazeWM 3.10.1 (glzr-io/glazewm#1438), so restart.ps1 is used instead.
+  - commands:
+      [
+        "shell-exec --hide-window powershell -NoProfile -ExecutionPolicy Bypass -File %USERPROFILE%/.glzr/glazewm/restart.ps1",
+      ]
     bindings: ["alt+shift+r"]
 
   # Redraw all windows.
