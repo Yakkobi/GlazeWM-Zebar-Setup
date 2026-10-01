@@ -52,9 +52,15 @@ i {
 }
 
 body {
-  font-family: ui-monospace, monospace;
+  font-family: 'JetBrainsMono NF', ui-monospace, monospace;
   font-size: var(--text-size);
   overflow: hidden;
+}
+
+/* Buttons don't inherit the page font by default. Icon buttons keep their
+   icon font, since the .nf class sets its own font-family. */
+button {
+  font-family: inherit;
 }
 
 div,
