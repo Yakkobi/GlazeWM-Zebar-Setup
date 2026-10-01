@@ -221,8 +221,9 @@ keybindings:
     bindings: ["alt+v"]
 
   # Change focus from tiling windows -> floating -> fullscreen.
+  # (alt+space is left free for PowerToys Run.)
   - commands: ["wm-cycle-focus"]
-    bindings: ["alt+space"]
+    bindings: ["alt+c"]
 
   # Change the focused window to be floating.
   - commands: ["toggle-floating --centered"]
