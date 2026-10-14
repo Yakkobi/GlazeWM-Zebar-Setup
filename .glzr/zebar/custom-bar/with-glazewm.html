@@ -30,9 +30,21 @@
         glazewm: { type: 'glazewm' },
         cpu: { type: 'cpu' },
         date: { type: 'date', formatting: 'EEE d MMM HH:mm' },
-        battery: { type: 'battery' },
         memory: { type: 'memory' },
       });
+
+      // Battery has its own provider so it can be restarted on its own. It
+      // can error or stop updating when the charger is plugged in or out,
+      // which used to make the battery vanish from the bar.
+      const BATTERY_REFRESH = 5000;
+      const batteryProvider = zebar.createProvider({
+        type: 'battery',
+        refreshInterval: BATTERY_REFRESH,
+      });
+
+      // Restart the battery provider if it errors or goes this long without
+      // an update.
+      const BATTERY_STALE_AFTER = 4 * BATTERY_REFRESH;
 
       // Separate provider so every sample is one network reading, polled
       // once a second for the speed graph.
@@ -80,6 +92,8 @@
       function App() {
         const [output, setOutput] = useState(providers.outputMap);
         const [network, setNetwork] = useState(networkProvider.output);
+        // Last good battery reading; kept on screen through provider errors.
+        const [battery, setBattery] = useState(batteryProvider.output);
         const [speedHistory, setSpeedHistory] = useState([]);
         const [tooltip, setTooltip] = useState(null);
         const [useNativeTooltips, setUseNativeTooltips] = useState(false);
@@ -123,6 +137,36 @@
               networkOutput.traffic?.received?.bytes ?? 0,
             ]);
           });
+        }, []);
+
+        // Keep the battery reading alive: restart the provider when it
+        // reports an error or stops sending updates.
+        useEffect(() => {
+          let lastUpdate = Date.now();
+          let restarting = false;
+          const restart = () => {
+            if (restarting) return;
+            restarting = true;
+            batteryProvider
+              .restart()
+              .catch(console.error)
+              .finally(() => {
+                restarting = false;
+                lastUpdate = Date.now();
+              });
+          };
+          batteryProvider.onOutput(batteryOutput => {
+            lastUpdate = Date.now();
+            setBattery(batteryOutput);
+          });
+          batteryProvider.onError(err => {
+            console.error('battery provider error:', err);
+            restart();
+          });
+          const watchdog = setInterval(() => {
+            if (Date.now() - lastUpdate > BATTERY_STALE_AFTER) restart();
+          }, BATTERY_REFRESH);
+          return () => clearInterval(watchdog);
         }, []);
 
         // Format a traffic measurement as e.g. "2.4 MB/s".
@@ -294,7 +338,7 @@
           network: network && getNetworkTooltip(network),
           memory: output.memory && getMemoryTooltip(output.memory),
           cpu: output.cpu && getCpuTooltip(output.cpu),
-          battery: output.battery && getBatteryTooltip(output.battery),
+          battery: battery && getBatteryTooltip(battery),
         };
 
         return (
@@ -412,18 +456,18 @@
                 </div>
               )}
 
-              {output.battery && (
+              {battery && (
                 <div
                   className="battery clickable"
                   {...tooltipProps('battery', tooltipTexts.battery)}
                   onClick={() => openSettings('ms-settings:powersleep')}
                 >
                   {/* Show icon for whether battery is charging. */}
-                  {output.battery.isCharging && (
+                  {battery.isCharging && (
                     <i className="nf nf-md-power_plug charging-icon"></i>
                   )}
-                  {getBatteryIcon(output.battery)}
-                  {Math.round(output.battery.chargePercent)}%
+                  {getBatteryIcon(battery)}
+                  {Math.round(battery.chargePercent)}%
                 </div>
               )}
             </div>
